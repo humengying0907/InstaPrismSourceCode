@@ -13,7 +13,7 @@
 | SKCM_refPhi    | skin cutaneous melanoma          | 4,645                                      | 8/23                             |[UMAP](https://www.weizmann.ac.il/sites/3CA/study-data/umap/20111)      | [Tirosh et al. 2016](https://www.science.org/doi/10.1126/science.aad0501) | [↓](https://github.com/humengying0907/InstaPrismSourceCode/raw/main/refPhi/SKCM_refPhi.RDS) |
 
 ## Reference validation pipeline
-1. To reproduce the reference validation results of the paper or to test the reference performance with your own data, clone the repository and go into the InstaPrismSourceCode directory.
+1. To reproduce the reference validation results from the paper or to test the reference performance with your own data, clone the repository and go into the InstaPrismSourceCode directory.
 ```
 git clone https://github.com/humengying0907/InstaPrismSourceCode.git && cd InstaPrismSourceCode
 ```
@@ -38,3 +38,7 @@ Rscript evalu_pipeline.R -t LUAD --key Malignant
 Rscript evalu_pipeline.R -t OV --key malignant
 Rscript evalu_pipeline.R -t RCC --key Malignant
 ```
+
+## Citation
+M. Hu and M. Chikina, “InstaPrism: an R package for fast implementation of BayesPrism.” bioRxiv, p. 2023.03.07.531579, Mar. 12, 2023.
+doi: https://doi.org/10.1101/2023.03.07.531579
