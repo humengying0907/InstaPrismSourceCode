@@ -11,3 +11,30 @@
 | OV_refPhi      | ovarian cancer                   | 929,690                                    | 9/40                             |[cellxgeneLink](https://cellxgene.cziscience.com/collections/4796c91c-9d8f-4692-be43-347b1727f9d8), [UMAP](https://cellxgene.cziscience.com/e/b252b015-b488-4d5c-b16e-968c13e48a2c.cxg/)      | [Vazquez et al. 2022](https://www.nature.com/articles/s41586-022-05496-1) | [↓](https://github.com/humengying0907/InstaPrismSourceCode/raw/main/refPhi/OV_refPhi.RDS) |
 | RCC_refPhi     | clear cell renal cell carcinoma  | 270,855                                    | 12/86                            |[cellxgeneLink](https://cellxgene.cziscience.com/collections/f7cecffa-00b4-4560-a29a-8ad626b8ee08), [UMAP](https://cellxgene.cziscience.com/e/5af90777-6760-4003-9dba-8f945fec6fdf.cxg/)      | [Li et al. 2022](https://www.cell.com/cancer-cell/fulltext/S1535-6108(22)00548-7) | [↓](https://github.com/humengying0907/InstaPrismSourceCode/raw/main/refPhi/RCC_refPhi.RDS) |
 | SKCM_refPhi    | skin cutaneous melanoma          | 4,645                                      | 8/23                             |[UMAP](https://www.weizmann.ac.il/sites/3CA/study-data/umap/20111)      | [Tirosh et al. 2016](https://www.science.org/doi/10.1126/science.aad0501) | [↓](https://github.com/humengying0907/InstaPrismSourceCode/raw/main/refPhi/SKCM_refPhi.RDS) |
+
+## Reference validation pipeline
+1. To reproduce the reference validation results of the paper or to test the reference performance with your own data, clone the repository and go into the InstaPrismSourceCode directory.
+```
+git clone https://github.com/humengying0907/InstaPrismSourceCode.git && cd InstaPrismSourceCode
+```
+
+2. Make sure that all the packages in `scripts/libraries.R` are installed
+```
+# To install InstaPrism & deconvBenchmarking package
+library("devtools");
+install_github("humengying0907/InstaPrism")
+install_github("humengying0907/deconvBenchmarking")
+```
+
+3. Make simulated bulk samples for reference validation. Code to reproduce bulk simulation for each cancer type is listed in `./analysis/bulk_simulation/"cancer type"`. A `sim_bulk.RDS` file will be generated and used in the subsequent validation step. Single cell data used for bulk simulation is downloaded from [3CA](https://www.weizmann.ac.il/sites/3CA/) repository.
+
+4. Reference validation. Run the following command to generate the performance summary object `theta_performance.RDS` and the associated pdf files that visualize the performance of the deconvolution results. An example output is listed in `./analysis/refPhi_validation/performance/BRCA`. A summarized performance plot can be found at `./analysis/refPhi_validation/performance/performance_summary.png`
+```
+cd analysis/refPhi_validation
+Rscript evalu_pipeline.R -t BRCA --key "Cancer Epithelial"
+Rscript evalu_pipeline.R -t CRC --key EpiT
+Rscript evalu_pipeline.R -t GBM --key Malignant
+Rscript evalu_pipeline.R -t LUAD --key Malignant
+Rscript evalu_pipeline.R -t OV --key malignant
+Rscript evalu_pipeline.R -t RCC --key Malignant
+```
