@@ -1,53 +1,40 @@
-set_rowNames_to_NULL = function(x){
-  rownames(x) = NULL
-  return(x)
-}
-
-
-UMI2CPM = function(scExpr){
-  col_sums <- Matrix::colSums(scExpr)
-  scaling_factors <- 10^6 / col_sums
-  cpm <- scExpr %*% Matrix::Diagonal(x = scaling_factors)
-  colnames(cpm) = colnames(scExpr)
-  return(cpm)
-}
-
 factor2vector_dataframe = function(meta){
   factor_columns <- sapply(meta, class) == "factor"
   meta[factor_columns] <- lapply(meta[factor_columns], as.character)
   return(meta)
 }
 
-
-unlog_transform <- function(x,base = 2) {
-  if (x == 0) {
-    return(0)  # If the element is 0, return 0
-  } else {
-    return(base^x-1)  # Apply the inverse transformation
-  }
+map_count = function(cell.type.labels,cell.state.labels){
+  df = data.frame(cell_type = cell.type.labels,
+                  cell_state = cell.state.labels)
+  v = df %>% group_by(cell_type,cell_state) %>% summarise(n=n())
+  return(as.data.frame(v))
 }
 
 # using refPhi
-multi_deconv = function(bulk_simulation_obj, refPhi_cs_obj, key, updateReference,niter,n.core){
+multi_deconv = function(bulk_simulation_obj, refPhi_list, key, updateReference,niter,n.core){
   
   deconvResults = list()
   for(bulk in names(bulk_simulation_obj)){
     bulk_expr = bulk_simulation_obj[[bulk]]$simulated_bulk
     bulk_res = list()
-    bulk_res[['initial']] = InstaPrism(input_type = 'refPhi_cs',
-                                       bulk_Expr = bulk_expr,
-                                       refPhi_cs = refPhi_cs_obj,
-                                       n.iter = niter,
-                                       n.core = 16)
-    if(updateReference){
-      bulk_res[['updated']] = InstaPrism_update(bulk_res[['initial']],
-                                                bulk_Expr = bulk_expr,
-                                                n.iter = niter,
-                                                n.core = n.core,
-                                                cell.types.to.update = 'all',
-                                                key = key)
-    }
     
+    for(refName in names(refPhi_list)){
+      refPhi_cs_obj = refPhi_list[[refName]]
+      bulk_res[[paste0(refName)]] = InstaPrism(input_type = 'refPhi_cs',
+                                                           bulk_Expr = bulk_expr,
+                                                           refPhi_cs = refPhi_cs_obj,
+                                                           n.iter = niter,
+                                                           n.core = n.core)
+      if(updateReference){
+        bulk_res[[paste0(refName,'_','updated')]] = InstaPrism_update(bulk_res[[paste0(refName)]],
+                                                  bulk_Expr = bulk_expr,
+                                                  n.iter = niter,
+                                                  n.core = n.core,
+                                                  cell.types.to.update = 'all',
+                                                  key = key)
+      }
+    }
     
     deconvResults[[bulk]] = bulk_res
     
@@ -57,197 +44,109 @@ multi_deconv = function(bulk_simulation_obj, refPhi_cs_obj, key, updateReference
   
 }
 
-
 extract_theta = function(InstaPrism_res_obj){
   theta_list = list()
   for (bulk in names(InstaPrism_res_obj)){
     bulk_theta_list = list()
-    bulk_theta_list[['initial']] = InstaPrism_res_obj[[bulk]]$initial@Post.ini.ct@theta %>% t()
-    
-    updateModes = names(InstaPrism_res_obj[[bulk]])[-1]
-    for(mode in updateModes){
-      updated_obj = InstaPrism_res_obj[[bulk]][[mode]]
-      
-      # determine if updated_obj@theta contain cell.state information
-      
-      if(all(rownames(updated_obj@theta) %in% colnames(bulk_theta_list[['initial']]))){
-        bulk_theta_list[[mode]] = updated_obj@theta %>% t()
+    for(refName in names(InstaPrism_res_obj[[bulk]])){
+      if(grepl('_updated',refName)){
+        bulk_theta_list[[refName]] = InstaPrism_res_obj[[bulk]][[refName]]@theta %>% t()
       }else{
-        bulk_theta_list[[mode]] = merge_updated_theta(updated_obj) %>% t()
+        bulk_theta_list[[refName]] = InstaPrism_res_obj[[bulk]][[refName]]@Post.ini.ct@theta %>% t()
       }
     }
+    
     theta_list[[bulk]] = bulk_theta_list
   }
   return(theta_list)
 }
 
-theta_evalu = function(theta_list,sim_obj,nonzero_threshold = 0.05){
-  deconvPerformance = list()
+theta_evalu = function(theta_list,simulated_frac,nonzero_threshold = 0.05){
   
-  for(bulk in names(theta_list)){
-    bulk_performance = list()
+  Y = simulated_frac
+  Y = Y[,order(colnames(Y)),drop = F]
+  
+  # Only cell types with a non-zero count ratio equal to or higher than 'nonzero_ratios' will be included for comparing their deconvolution performance.
+  nonzero_ratios = colSums(Y>0.005, na.rm = T)/nrow(Y)
+  ct_to_evalu = names(nonzero_ratios)[nonzero_ratios >= nonzero_threshold]
+  Y_ = Y[,ct_to_evalu,drop = F]
+  
+  # detailed per-method evaluation statistics
+  deconvEvalu = list()
+  
+  for(method in names(theta_list)){
     
-    Y = sim_obj[[bulk]]$simulated_frac
-    Y = Y[,order(colnames(Y)),drop = F]
+    E = theta_list[[method]]
+    E = E[,order(colnames(E)),drop = F]
     
-    # Only cell types with a non-zero count ratio equal to or higher than 'nonzero_ratios' will be included for comparing their deconvolution performance.
-    nonzero_ratios = colSums(Y>0, na.rm = T)/nrow(Y)
-    ct_to_evalu = names(nonzero_ratios)[nonzero_ratios >= nonzero_threshold]
-    Y_ = Y[,ct_to_evalu,drop = F]
-
-    # detailed per-method evaluation statistics
-    deconvEvalu = list()
-    
-    # look at the distribution of predicted theta for cell types that are in the reference, but not in bulk simulation
-    over_representation = list()
-    
-    for(method in names(theta_list[[bulk]])){
-      E = theta_list[[bulk]][[method]]
-      E = E[,order(colnames(E)),drop = F]
-      
-      if(ncol(Y) == ncol(E)){
-        if(all(colnames(Y) == colnames(E))){
-          # modify E according to nonzero_threshold if it contains the exact set of cell types as the true_frac
-          E = E[,ct_to_evalu,drop = F]
-          
-          op_df = data.frame(matrix(NA,ncol = 2,nrow = 0))
-          colnames(op_df) = c('over_represented_ct','estimate')
-          over_representation[[method]] = op_df
-          
-        }else{
-          # find cell types that exhibit the highest correlation with true_frac in Y_
-          maxCorName = c()
-          for(ct in colnames(Y_)){
-            id = apply(cor(E,Y_[,ct],use = 'pairwise.complete.obs'),2,which.max)
-            maxCorName = c(maxCorName, colnames(E)[id])
-          }
-          
-          op_ct = colnames(E)[!colnames(E) %in% unique(maxCorName)]
-          op_df = gather(E[,op_ct,drop=F] %>% as.data.frame(),over_represented_ct,estimate)
-          over_representation[[method]] = op_df
-          
-          E = E[,maxCorName,drop = F]
-          colnames(E) = make.unique(colnames(E))
-          
-        }
+    if(ncol(Y) == ncol(E)){
+      if(all(colnames(Y) == colnames(E))){
+        # modify E according to nonzero_threshold if it contains the exact set of cell types as the true_frac
+        E = E[,ct_to_evalu,drop = F]
+        
       }else{
+        # find cell types that exhibit the highest correlation with true_frac in Y_
         maxCorName = c()
         for(ct in colnames(Y_)){
           id = apply(cor(E,Y_[,ct],use = 'pairwise.complete.obs'),2,which.max)
           maxCorName = c(maxCorName, colnames(E)[id])
         }
         
-
-
-        op_ct = colnames(E)[!colnames(E) %in% unique(maxCorName)]
-        op_df = gather(E[,op_ct,drop=F] %>% as.data.frame(),over_represented_ct,estimate)
-        over_representation[[method]] = op_df
-        
         E = E[,maxCorName,drop = F]
         colnames(E) = make.unique(colnames(E))
+        
+      }
+    }else{
+      maxCorName = c()
+      for(ct in colnames(Y_)){
+        id = apply(cor(E,Y_[,ct],use = 'pairwise.complete.obs'),2,which.max)
+        maxCorName = c(maxCorName, colnames(E)[id])
       }
       
-      m1 = gather(Y_ %>% as.data.frame(),cell_type,true_frac)
-      m2 = gather(E %>% as.data.frame(),maxCorName,estimate)
-      M = cbind(m1,m2)
-      
-      # add summary statistics
-      summ <- M %>%
-        group_by(cell_type) %>%
-        summarise(
-          RMSE = caret::RMSE(true_frac, estimate,na.rm = T),
-          cor = cor(true_frac,estimate,method = 'pearson',use = 'pairwise.complete.obs')) %>%
-        mutate_if(is.numeric, round, digits=2) %>% as.data.frame() %>% column_to_rownames('cell_type')
-      
-      summ$maxCorName = M$maxCorName[match(rownames(summ),M$cell_type)]
-      deconvEvalu[[method]] = list(M = M, summ = summ)
-      
+      E = E[,maxCorName,drop = F]
+      colnames(E) = make.unique(colnames(E))
     }
     
+    m1 = gather(Y_ %>% as.data.frame(),cell_type,true_frac)
+    m2 = gather(E %>% as.data.frame(),maxCorName,estimate)
+    M = cbind(m1,m2)
     
-    bulk_performance$deconvEvalu = deconvEvalu
-    bulk_performance$over_representation = over_representation
+    # add summary statistics
+    summ <- M %>%
+      group_by(cell_type) %>%
+      summarise(
+        RMSE = caret::RMSE(true_frac, estimate,na.rm = T),
+        cor = cor(true_frac,estimate,method = 'pearson',use = 'pairwise.complete.obs')) %>%
+      mutate_if(is.numeric, round, digits=2) %>% as.data.frame() %>% column_to_rownames('cell_type')
     
-    deconvPerformance[[bulk]] = bulk_performance
-    message(paste('>>>>>>>>>>>>>>>>>>>>>>>>>>>>> finish performance evaluation for',bulk,'>>>>>>>>>>>>>>>>>>>>>>>>>>>>>'))
-    
+    summ$maxCorName = M$maxCorName[match(rownames(summ),M$cell_type)]
+    deconvEvalu[[method]] = list(M = M, summ = summ)
   }
-  return(deconvPerformance)
+  
+  return(deconvEvalu)
   
 }
 
-theta_plot = function(single_theta_performance,method){
-  l = single_theta_performance$deconvEvalu[[method]]
-  op_df = single_theta_performance$over_representation[[method]]
-  op_df$kind = 'ct in reference, not in bulk'
-  
-  M=l$M
-  summ=l$summ
-  summ = summ %>% rownames_to_column('cell_type')
-  nrow = 1
-  
-  title = method
-  
-  p = ggplot(M,aes(true_frac,estimate))+
-    geom_point()+
-    geom_abline(intercept = 0, slope = 1,linetype='dotted',color='red')+
-    facet_wrap(~cell_type,nrow=nrow)+  # scatter plot will be arranged alphabetically
-    theme(aspect.ratio=1)+
-    ggtitle(title)+
-    theme(plot.title = element_text(hjust = 0.5))+
-    theme_bw()
-  
-  p + ggpp::geom_table_npc(data = summ, label = lapply(split(summ, summ$cell_type),
-                                                            FUN = function(entry) {subset(entry, select = -cell_type)}),
-                                npcx = 0.00, npcy = 1, hjust = 0, vjust = 1, size=3,
-                                table.theme = ttheme_gtlight)
-}
-
-theta_op_plot = function(single_theta_performance,method){
-  l = single_theta_performance$deconvEvalu[[method]]
-  op_df = single_theta_performance$over_representation[[method]]
-  op_df$kind = 'ct in reference, not in bulk'
-  
-  M=l$M
-  summ=l$summ
-  summ = summ %>% rownames_to_column('cell_type')
-  nrow = 1
-  
-  ggplot(op_df,aes(over_represented_ct,estimate))+
-    geom_boxplot()+
-    ylim(c(0,1))+
-    facet_wrap(~kind)+
-    theme_bw()
-  }
-
-theta_plot_export = function(single_theta_performance,fig_width = 12,fig_height = 18,plot_file_name = 'theta_performance.pdf'){
+theta_plot_export = function(single_theta_performance,fig_width = 12,fig_height = 18,
+                             plot_file_name = 'theta_performance.pdf'){
   
   plot_sets = list()
   
-  for(method in names(single_theta_performance$deconvEvalu)){
+  for(method in names(single_theta_performance)){
     
-    l = single_theta_performance$deconvEvalu[[method]]
-    #op_df = single_theta_performance$over_representation[[method]]
-    #op_df$kind = 'ct in reference, not in bulk'
-    
+    l = single_theta_performance[[method]]
     M=l$M
     summ=l$summ
     summ = summ %>% rownames_to_column('cell_type')
     nrow = 1
-    
+    summ = summ[order(summ$cell_type),] # order alphabetically
+
     title = method
-    
-    #if(grepl('updateMode',method)){
-    #  mode_id = as.numeric(gsub("[^0-9]", "", method))
-    #  title = paste0(method,' : ',key,', ',paste(ct.update.list[[mode_id]],collapse = ', '))
-    #}else{
-    #  title = method
-    #}
     
     p = ggplot(M,aes(true_frac,estimate))+
       geom_point()+
       geom_abline(intercept = 0, slope = 1,linetype='dotted',color='red')+
-      facet_wrap(~cell_type,nrow=nrow)+  # scatter plot will be arranged alphabetically
+      facet_wrap(~cell_type,nrow=nrow)+  
       ggtitle(title)+
       ylim(c(0,1.6))+
       theme(plot.title = element_text(hjust = 0.5),aspect.ratio=1)+
@@ -272,8 +171,8 @@ theta_plot_export = function(single_theta_performance,fig_width = 12,fig_height 
   
 }
 
-
-create_pseudobulk_obj = function(scExpr,scMeta,colnames_of_sample = 'sample',colnames_of_cellType = 'cell_type',
+create_pseudobulk_obj = function(scExpr,scMeta,colnames_of_sample = 'sample',
+                                 colnames_of_cellType = 'cell_type',
                                  unit = 'cpm',min.cells = 3,
                                  add_heter = F, simulated_frac = NULL,min_chunkSize = 10){
   

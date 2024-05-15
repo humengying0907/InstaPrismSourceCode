@@ -11,28 +11,35 @@ luad_sim_bulk$TCGA = deconvBenchmarking:::build_tcga_obj('LUAD',
                                                          to_use_genes = rownames(LUAD_refPhi@phi.cs))
 
 #################### pseudobulk plus heter from Data_Kim2020_Lung ############
-# only contains 14 samples, metastatic samples not included
-scExpr = Seurat::ReadMtx(mtx = '../../../../curated_dataset/LUAD/Data_Kim2020_Lung/Exp_data_UMIcounts.mtx',
-                         cells = '../../../../curated_dataset/LUAD/Data_Kim2020_Lung/Cells.csv',
-                         features = '../../../../curated_dataset/LUAD/Data_Kim2020_Lung/Genes.txt',
-                         feature.column = 1,skip.cell = 1,cell.sep = ',') # less memory usage compared with readMM()
+dataset_path = '../../../../../curated_dataset/LUAD/Data_Kim2020_Lung/'
 
-scMeta = read.delim('../../../../curated_dataset/LUAD/Data_Kim2020_Lung/Cells.csv',sep = ',') %>% column_to_rownames('cell_name')
+
+scExpr = Seurat::ReadMtx(mtx = paste0(dataset_path,'Exp_data_UMIcounts.mtx'),
+                         cells = paste0(dataset_path,'Cells.csv'),
+                         features = paste0(dataset_path,'Genes.txt'),
+                         feature.column = 1,skip.cell = 1,cell.sep = ',') 
+
+scMeta = read.delim(paste0(dataset_path,'Cells.csv'),sep = ',') %>% column_to_rownames('cell_name')
 
 ct_table = table(scMeta$cell_type)
 ct_table = ct_table[names(ct_table)!='']
 
-simulated_frac = fracSimulator_Dirichlet(ct_table,n=30,dispersion_par = 0.0005,min.frac = 0.01)
+n_pseudo = length(unique(scMeta$sample))
+n_simu = 50-n_pseudo
 
-luad_sim_bulk$Kim2020 = create_pseudobulk_obj(scExpr,scMeta,unit = 'UMI',min.cells = 3,add_heter = T,simulated_frac = simulated_frac)
+simulated_frac = fracSimulator_Dirichlet(ct_table,n=n_simu,dispersion_par = 0.0005,min.frac = 0.01)
+
+luad_sim_bulk$Kim2020 = create_pseudobulk_obj(scExpr,scMeta,unit = 'UMI',min.cells = 3,
+                                              add_heter = T,simulated_frac = simulated_frac)
 
 ################# pseudobulk from Qian2020 ################## 
-scExpr = Seurat::ReadMtx(mtx = '../../../../curated_dataset/LUAD/Data_Qian2020_Lung/Exp_data_UMIcounts.mtx',
-                         cells = '../../../../curated_dataset/LUAD/Data_Qian2020_Lung/Cells.csv',
-                         features = '../../../../curated_dataset/LUAD/Data_Qian2020_Lung/Genes.txt',
-                         feature.column = 1,skip.cell = 1,cell.sep = ',') # less memory usage compared with readMM()
+dataset_path = '../../../../../curated_dataset/LUAD/Data_Qian2020_Lung/'
 
-scMeta = read.delim('../../../../curated_dataset/LUAD/Data_Qian2020_Lung/Cells.csv',sep = ',') %>% column_to_rownames('cell_name')
+scExpr = Seurat::ReadMtx(mtx = paste0(dataset_path,'Exp_data_UMIcounts.mtx'),
+                         cells = paste0(dataset_path,'Cells.csv'),
+                         features = paste0(dataset_path,'Genes.txt'),
+                         feature.column = 1,skip.cell = 1,cell.sep = ',')
+scMeta = read.delim(paste0(dataset_path,'Cells.csv'),sep = ',') %>% column_to_rownames('cell_name')
 
 # only use LUAD samples
 to_keep = which(scMeta$disease == 'LUAD' & scMeta$cell_type!='')
@@ -41,9 +48,11 @@ to_keep = which(scMeta$disease == 'LUAD' & scMeta$cell_type!='')
 scExpr = scExpr[,to_keep]
 scMeta = scMeta[to_keep,]
 
-
 ct_table = table(scMeta$cell_type)
-simulated_frac = fracSimulator_Dirichlet(ct_table,n=50,dispersion_par = 0.0005,min.frac = 0.01)
+n_pseudo = length(unique(scMeta$sample))
+n_simu = 50-n_pseudo
+
+simulated_frac = fracSimulator_Dirichlet(ct_table,n=n_simu,dispersion_par = 0.0005,min.frac = 0.01)
 
 luad_sim_bulk$Qian2020 = create_pseudobulk_obj(scExpr = scExpr,
                                                scMeta = scMeta,

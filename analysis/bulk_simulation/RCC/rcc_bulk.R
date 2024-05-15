@@ -12,12 +12,13 @@ rcc_sim_bulk$TCGA = deconvBenchmarking:::build_tcga_obj('KIRC',
                                                         purity_methods =  c('ESTIMATE', 'ABSOLUTE', 'LUMP', 'IHC', 'CPE','ABSOLUTE_GDC'))
 
 ################## pseudobulk from Zhang2021_Kidney ###################
-scExpr = Seurat::ReadMtx(mtx = '../../../../curated_dataset/RCC/Data_Zhang2021_Kidney/Exp_data_UMIcounts.mtx',
-                         cells = '../../../../curated_dataset/RCC/Data_Zhang2021_Kidney/Cells.csv',
-                         features = '../../../../curated_dataset/RCC/Data_Zhang2021_Kidney/Genes.txt',
-                         feature.column = 1,skip.cell = 1,cell.sep = ',') # less memory usage compared with readMM()
+dataset_path = '../../../../../curated_dataset/RCC/Data_Zhang2021_Kidney/'
+scExpr = Seurat::ReadMtx(mtx = paste0(dataset_path,'Exp_data_UMIcounts.mtx'),
+                         cells = paste0(dataset_path,'Cells.csv'),
+                         features = paste0(dataset_path,'Genes.txt'),
+                         feature.column = 1,skip.cell = 1,cell.sep = ',') 
 
-scMeta = read.delim('../../../../curated_dataset/RCC/Data_Zhang2021_Kidney/Cells.csv',sep = ',') %>% column_to_rownames('cell_name')
+scMeta = read.delim(paste0(dataset_path,'Cells.csv'),sep = ',') %>% column_to_rownames('cell_name')
 
 # use ccRCC only
 keep_id = which(scMeta$cell_type!='' & scMeta$disease == 'Clear_Cell_RCC')
@@ -26,7 +27,10 @@ scMeta = scMeta[keep_id,]
 
 
 ct_table = table(scMeta$cell_type)
-simulated_frac = fracSimulator_Dirichlet(ct_table,n=50,dispersion_par = 0.0003,min.frac = 0.01)
+n_pseudo = length(unique(scMeta$sample))
+n_simu = 50-n_pseudo
+simulated_frac = fracSimulator_Dirichlet(ct_table,n=n_simu,dispersion_par = 0.0005,min.frac = 0.01)
+
 rcc_sim_bulk$Zhang2021 = create_pseudobulk_obj(scExpr,scMeta,
                                                unit = 'UMI',
                                                min.cells = 3,
@@ -35,18 +39,19 @@ rcc_sim_bulk$Zhang2021 = create_pseudobulk_obj(scExpr,scMeta,
                                                min_chunkSize = 10)
 
 #### pseuodbulk from Young2018_Kidney #######
-scExpr = Seurat::ReadMtx(mtx = '../../../../curated_dataset/RCC/Data_Young2018_Kidney/Exp_data_UMIcounts.mtx',
-                         cells = '../../../../curated_dataset/RCC/Data_Young2018_Kidney/Cells.csv',
-                         features = '../../../../curated_dataset/RCC/Data_Young2018_Kidney/Genes.txt',
-                         feature.column = 1,skip.cell = 1,cell.sep = ',') # less memory usage compared with readMM()
+dataset_path = '../../../../../curated_dataset/RCC/Data_Young2018_Kidney/'
 
-scMeta = read.delim('../../../../curated_dataset/RCC/Data_Young2018_Kidney/Cells.csv',sep = ',') %>% column_to_rownames('cell_name')
+scExpr = Seurat::ReadMtx(mtx = paste0(dataset_path,'Exp_data_UMIcounts.mtx'),
+                         cells = paste0(dataset_path,'Cells.csv'),
+                         features = paste0(dataset_path,'Genes.txt'),
+                         feature.column = 1,skip.cell = 1,cell.sep = ',') 
+scMeta = read.delim(paste0(dataset_path,'Cells.csv'),sep = ',') %>% column_to_rownames('cell_name')
 scMeta$disease = gsub("^(.*?)_.*$", "\\1", scMeta$sample)
 
-
 to_keep = which(scMeta$cell_QCpass == T & scMeta$cell_type!='' 
-                & scMeta$cell_type!= 'Erythroblast' 
+                & scMeta$cell_type!= 'Megakaryocyte' # rare cell types
                 & scMeta$cell_type!= 'Neutrophil'
+                & scMeta$cell_type!= 'Erythroblast'
                 & scMeta$disease %in% c('RCC1','RCC2','RCC3'))
 
 scExpr = scExpr[,to_keep]
@@ -58,7 +63,10 @@ scExpr = scExpr[,to_use]
 scMeta = scMeta[to_use,]
 
 ct_table = table(scMeta$cell_type)
-simulated_frac = fracSimulator_Dirichlet(ct_table,n=50,dispersion_par = 0.0003,min.frac = 0.001)
+n_pseudo = length(unique(scMeta$sample))
+n_simu = 50-n_pseudo
+
+simulated_frac = fracSimulator_Dirichlet(ct_table,n=n_simu,dispersion_par = 0.0003,min.frac = 0.001)
 
 rcc_sim_bulk$Young2018 = create_pseudobulk_obj(scExpr,scMeta,
                                                unit = 'UMI',
